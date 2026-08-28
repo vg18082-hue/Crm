@@ -1,0 +1,499 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------
+// Enums
+// ----------------------------------------------------
+
+enum Role {
+  ADMIN
+  MANAGER_HEAD
+  MANAGER
+  CASHIER
+}
+
+enum LeadStatus {
+  NEW
+  IN_PROGRESS
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum SaleStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskType {
+  CALL
+  MESSAGE
+  CALLBACK
+  ORDER_PROCESSING
+  OTHER
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  DUE_SOON
+  PENDING_PAYMENT
+  OVERDUE
+  PAUSED
+  CANCELLED
+}
+
+enum SubscriptionPlan {
+  FREE
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+enum ProductType {
+  PRODUCT
+  SERVICE
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  OTHER
+}
+
+// ----------------------------------------------------
+// Models
+// ----------------------------------------------------
+
+/// Компания-подписчик CRM (Tenant)
+model Tenant {
+  id                    String                @id @default(uuid())
+  name                  String
+  plan                  SubscriptionPlan      @default(FREE)
+  maxUsers              Int                   @default(5)
+  isActive              Boolean               @default(true)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  // Multi-tenant relations
+  users                 User[]
+  clients               Client[]
+  leads                 Lead[]
+  sales                 Sale[]
+  orders                Order[]
+  products              Product[]
+  tasks                 Task[]
+  payments              Payment[]
+  subscriptions         Subscription[]
+  subscriptionPayments  SubscriptionPayment[]
+  clientSubscriptions   ClientSubscription[]
+  auditLogs             AuditLog[]
+  telegramConfig        TelegramConfig?
+
+  @@map("tenants")
+}
+
+/// Сотрудник компании (User)
+model User {
+  id              String        @id @default(uuid())
+  name            String
+  email           String
+  password        String
+  role            Role          @default(MANAGER)
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Relations
+  assignedClients Client[]      @relation("AssignedClients")
+  assignedLeads   Lead[]        @relation("AssignedLeads")
+  assignedSales   Sale[]        @relation("AssignedSales")
+  assignedOrders  Order[]       @relation("AssignedOrders")
+  tasks           Task[]        @relation("AssignedTasks")
+  auditLogs       AuditLog[]
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+/// Клиент бизнеса (Client)
+model Client {
+  id            String               @id @default(uuid())
+  name          String
+  phone         String?
+  email         String?
+  telegram      String?
+  address       String?
+  source        String?
+  debt          Decimal              @default(0) @db.Decimal(12, 2)
+  comment       String?
+  assignedToId  String?
+  assignedTo    User?                @relation("AssignedClients", fields: [assignedToId], references: [id], onDelete: SetNull)
+  tenantId      String
+  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Relations
+  leads         Lead[]
+  sales         Sale[]
+  orders        Order[]
+  payments      Payment[]
+  tasks         Task[]
+  subscriptions ClientSubscription[]
+
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([tenantId])
+  @@index([assignedToId])
+  @@map("clients")
+}
+
+/// Лид (Lead)
+model Lead {
+  id              String        @id @default(uuid())
+  name            String
+  phone           String?
+  company         String?
+  source          String?
+  interestedIn    String?
+  potentialAmount Decimal?      @db.Decimal(12, 2)
+  comment         String?
+  nextContactDate DateTime?
+  status          LeadStatus    @default(NEW)
+  clientId        String?
+  client          Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  assignedToId    String?
+  assignedTo      User?         @relation("AssignedLeads", fields: [assignedToId], references: [id], onDelete: SetNull)
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Relations
+  sales           Sale[]
+  tasks           Task[]
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([assignedToId])
+  @@map("leads")
+}
+
+/// Товар / Услуга (Product)
+model Product {
+  id            String        @id @default(uuid())
+  name          String
+  category      String?
+  description   String?
+  sku           String?
+  type          ProductType   @default(PRODUCT)
+  price         Decimal       @db.Decimal(12, 2)
+  costPrice     Decimal?      @db.Decimal(12, 2)
+  stock         Int           @default(0)
+  unit          String        @default("шт")
+  isActive      Boolean       @default(true)
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Relations
+  saleItems     SaleItem[]
+  orderItems    OrderItem[]
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([tenantId])
+  @@map("products")
+}
+
+/// Продажа (Sale)
+model Sale {
+  id            String        @id @default(uuid())
+  clientId      String
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  leadId        String?
+  lead          Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  amount        Decimal       @db.Decimal(12, 2)
+  discount      Decimal       @default(0) @db.Decimal(12, 2)
+  status        SaleStatus    @default(PENDING)
+  paymentMethod PaymentMethod @default(CASH)
+  comment       String?
+  assignedToId  String?
+  assignedTo    User?         @relation("AssignedSales", fields: [assignedToId], references: [id], onDelete: SetNull)
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Relations
+  saleItems     SaleItem[]
+  payments      Payment[]
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([leadId])
+  @@index([assignedToId])
+  @@map("sales")
+}
+
+/// Позиция продажи (SaleItem)
+model SaleItem {
+  id            String        @id @default(uuid())
+  saleId        String
+  sale          Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name          String
+  quantity      Int           @default(1)
+  price         Decimal       @db.Decimal(12, 2)
+  discount      Decimal       @default(0) @db.Decimal(12, 2)
+  total         Decimal       @db.Decimal(12, 2)
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+/// Заказ (Order)
+model Order {
+  id             String        @id @default(uuid())
+  orderNumber    String?
+  clientId       String
+  client         Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  amount         Decimal       @default(0) @db.Decimal(12, 2)
+  discount       Decimal       @default(0) @db.Decimal(12, 2)
+  status         OrderStatus   @default(PENDING)
+  paymentMethod  PaymentMethod @default(CASH)
+  completionDate DateTime?
+  comment        String?
+  assignedToId   String?
+  assignedTo     User?         @relation("AssignedOrders", fields: [assignedToId], references: [id], onDelete: SetNull)
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Relations
+  orderItems     OrderItem[]
+  payments       Payment[]
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([assignedToId])
+  @@map("orders")
+}
+
+/// Позиция заказа (OrderItem)
+model OrderItem {
+  id            String        @id @default(uuid())
+  orderId       String
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name          String
+  quantity      Int           @default(1)
+  price         Decimal       @db.Decimal(12, 2)
+  discount      Decimal       @default(0) @db.Decimal(12, 2)
+  total         Decimal       @db.Decimal(12, 2)
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+/// Платеж (Payment)
+model Payment {
+  id            String        @id @default(uuid())
+  amount        Decimal       @db.Decimal(12, 2)
+  paymentMethod PaymentMethod @default(CASH)
+  paymentDate   DateTime      @default(now())
+  status        SaleStatus    @default(PAID)
+  saleId        String?
+  sale          Sale?         @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  orderId       String?
+  order         Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  clientId      String?
+  client        Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  comment       String?
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([tenantId])
+  @@index([saleId])
+  @@index([orderId])
+  @@index([clientId])
+  @@map("payments")
+}
+
+/// Задача (Task)
+model Task {
+  id            String        @id @default(uuid())
+  title         String
+  comment       String?
+  type          TaskType      @default(OTHER)
+  assignedToId  String?
+  assignedTo    User?         @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: SetNull)
+  clientId      String?
+  client        Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  leadId        String?
+  lead          Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dueDate       DateTime?
+  priority      TaskPriority  @default(MEDIUM)
+  status        TaskStatus    @default(TODO)
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([tenantId])
+  @@index([assignedToId])
+  @@index([clientId])
+  @@index([leadId])
+  @@map("tasks")
+}
+
+/// Абонентская подписка клиентов бизнеса (ClientSubscription)
+model ClientSubscription {
+  id                String             @id @default(uuid())
+  clientId          String
+  client            Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  planName          String
+  amount            Decimal            @db.Decimal(12, 2)
+  periodMonths      Int                @default(1)
+  startDate         DateTime           @default(now())
+  nextPaymentDate   DateTime
+  actualPaymentDate DateTime?
+  status            SubscriptionStatus @default(ACTIVE)
+  paymentMethod     PaymentMethod      @default(CASH)
+  assignedToId      String?
+  comment           String?
+  tenantId          String
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@map("client_subscriptions")
+}
+
+/// Подписка компании на саму CRM (Subscription)
+model Subscription {
+  id              String                @id @default(uuid())
+  tenantId        String
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan            SubscriptionPlan      @default(BASIC)
+  status          SubscriptionStatus    @default(ACTIVE)
+  nextPaymentDate DateTime
+  payments        SubscriptionPayment[]
+
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([tenantId])
+  @@map("subscriptions")
+}
+
+/// История платежей подписки компании (SubscriptionPayment)
+model SubscriptionPayment {
+  id              String            @id @default(uuid())
+  subscriptionId  String
+  subscription    Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount          Decimal           @db.Decimal(12, 2)
+  paymentDate     DateTime          @default(now())
+  method          PaymentMethod     @default(CARD)
+  status          SaleStatus        @default(PAID)
+  tenantId        String
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([tenantId])
+  @@index([subscriptionId])
+  @@map("subscription_payments")
+}
+
+/// Журнал аудита действий (AuditLog)
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+/// Конфигурация Telegram-уведомлений для компании (TelegramConfig)
+model TelegramConfig {
+  id                 String   @id @default(uuid())
+  tenantId           String   @unique
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  botToken           String?
+  chatId             String?
+  isEnabled          Boolean  @default(false)
+  notifyLeads        Boolean  @default(true)
+  notifyOrders       Boolean  @default(true)
+  notifyPayments     Boolean  @default(true)
+  notifySubscriptions Boolean @default(true)
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("telegram_configs")
+}
