@@ -416,7 +416,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         open={isTgModalOpen}
         onCancel={() => setIsTgModalOpen(false)}
         footer={null}
-        width={580}
+        width={640}
       >
         {isTgLoading ? (
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
@@ -566,8 +566,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 }}>
-                <Space>
+              <Divider style={{ margin: '16px 0' }} />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                <Space wrap size="small">
                   <Button
                     icon={<SendOutlined />}
                     onClick={() => testTgMutation.mutate()}
@@ -582,6 +584,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   >
                     Запустить Cron
                   </Button>
+                </Space>
+
+                <Space size="middle">
                   <Button
                     danger
                     type="text"
@@ -591,11 +596,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   >
                     Отключить
                   </Button>
+                  <Button type="primary" htmlType="submit" loading={saveTgMutation.isPending}>
+                    Сохранить
+                  </Button>
                 </Space>
-
-                <Button type="primary" htmlType="submit" loading={saveTgMutation.isPending}>
-                  Сохранить
-                </Button>
               </div>
             </Form>
           </div>
