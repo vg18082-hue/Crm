@@ -5,14 +5,18 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AppstoreOutlined,
+  CheckCircleOutlined,
   CheckSquareOutlined,
   CreditCardOutlined,
   DashboardOutlined,
+  DeleteOutlined,
+  DisconnectOutlined,
   DollarOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
+  QrcodeOutlined,
   RocketOutlined,
   SendOutlined,
   SettingOutlined,
@@ -26,7 +30,9 @@ import {
 import {
   Alert,
   Avatar,
+  Badge,
   Button,
+  Card,
   ConfigProvider,
   Divider,
   Dropdown,
@@ -36,9 +42,11 @@ import {
   Menu,
   Modal,
   Space,
+  Spin,
   Switch,
   Tag,
   Tooltip,
+  Typography,
   message,
   theme,
 } from 'antd';
@@ -47,6 +55,7 @@ import { useTheme } from '@/lib/theme-context';
 import { apiClient } from '@/lib/api-client';
 
 const { Header, Sider, Content } = Layout;
+const { Text, Title, Paragraph } = Typography;
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -60,8 +69,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
   const isDark = mode === 'dark';
 
-  // Fetch Telegram Config
-  const { data: tgConfig } = useQuery({
+  // Fetch Telegram Config with automatic polling when modal is open
+  const { data: tgConfig, isLoading: isTgLoading, refetch: refetchTg } = useQuery({
     queryKey: ['telegram-config'],
     queryFn: async () => {
       if (!user) return null;
@@ -69,9 +78,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       return res.data;
     },
     enabled: !!user,
+    refetchInterval: isTgModalOpen ? 3000 : false,
   });
 
-  // Save Telegram Config
+  // Save Telegram Toggles
   const saveTgMutation = useMutation({
     mutationFn: async (values: any) => {
       return apiClient.patch('/notifications/telegram-config', values);
@@ -82,6 +92,20 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     },
     onError: (err: any) => {
       message.error(err.response?.data?.message || 'Ошибка сохранения настроек');
+    },
+  });
+
+  // Disconnect Telegram
+  const disconnectMutation = useMutation({
+    mutationFn: async () => {
+      return apiClient.post('/notifications/telegram-disconnect');
+    },
+    onSuccess: () => {
+      message.warning('Telegram-бот успешно отключен');
+      queryClient.invalidateQueries({ queryKey: ['telegram-config'] });
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Ошибка отключения');
     },
   });
 
@@ -301,13 +325,13 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             />
 
             <Space size="middle">
-              {/* Telegram & Bot Quick Setup Button */}
-              <Tooltip title="Настройки Telegram уведомлений и Cron">
+              {/* Telegram Connect Button with status badge */}
+              <Tooltip title="Настройки мгновенных Telegram-уведомлений">
                 <Button
-                  type="primary"
-                  ghost
+                  type={tgConfig?.isConnected ? 'default' : 'primary'}
+                  ghost={!tgConfig?.isConnected}
                   shape="round"
-                  icon={<SendOutlined style={{ color: '#1677ff' }} />}
+                  icon={<SendOutlined style={{ color: tgConfig?.isConnected ? '#52c41a' : '#1677ff' }} />}
                   onClick={() => {
                     if (tgConfig) {
                       tgForm.setFieldsValue(tgConfig);
@@ -316,7 +340,14 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   }}
                   style={{ fontWeight: 500 }}
                 >
-                  Telegram Бот
+                  {tgConfig?.isConnected ? (
+                    <Space size={4}>
+                      <span>Telegram</span>
+                      <Badge status="success" />
+                    </Space>
+                  ) : (
+                    'Подключить Telegram'
+                  )}
                 </Button>
               </Tooltip>
 
@@ -368,86 +399,162 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         </Layout>
       </Layout>
 
-      {/* Telegram & Automation Settings Modal */}
+      {/* Telegram 1-Click Connect & Automation Modal */}
       <Modal
-        title="🤖 Настройки Telegram-бота и Очередей Bull"
+        title={
+          <Space>
+            <SendOutlined style={{ color: '#1677ff', fontSize: 20 }} />
+            <span style={{ fontSize: 17, fontWeight: 600 }}>Telegram-уведомления для компании</span>
+          </Space>
+        }
         open={isTgModalOpen}
         onCancel={() => setIsTgModalOpen(false)}
         footer={null}
-        width={560}
+        width={580}
       >
-        <Alert
-          message="Автоматические уведомления и Cron"
-          description="Бот автоматически присылает уведомления о новых лидах, заказах, дедлайнах задач, скорой оплате и просрочке подписок (за 7 дней, за 3 дня и в день платежа)."
-          type="info"
-          showIcon
-          style={{ marginBottom: 20 }}
-        />
-
-        <Form
-          layout="vertical"
-          form={tgForm}
-          initialValues={tgConfig}
-          onFinish={(values) => saveTgMutation.mutate(values)}
-        >
-          <Form.Item label="Включить Telegram-уведомления" name="isEnabled" valuePropName="checked">
-            <Switch checkedChildren="Включено" unCheckedChildren="Выключено" />
-          </Form.Item>
-
-          <Form.Item label="Telegram Bot Token" name="botToken" tooltip="Получите у @BotFather в Telegram">
-            <Input placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ" size="large" />
-          </Form.Item>
-
-          <Form.Item
-            label="Chat ID / Group ID"
-            name="chatId"
-            tooltip="ID личного чата или рабочей группы (например: -1001234567890 или ваш user ID)"
-          >
-            <Input placeholder="-1001234567890" size="large" />
-          </Form.Item>
-
-          <Divider orientation="left" style={{ fontSize: 13 }}>
-            Типы событий для отправки:
-          </Divider>
-
-          <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
-            <Form.Item label="Новые лиды" name="notifyLeads" valuePropName="checked">
-              <Switch defaultChecked />
-            </Form.Item>
-            <Form.Item label="Новые заказы" name="notifyOrders" valuePropName="checked">
-              <Switch defaultChecked />
-            </Form.Item>
-            <Form.Item label="Оплаты и чеки" name="notifyPayments" valuePropName="checked">
-              <Switch defaultChecked />
-            </Form.Item>
-            <Form.Item label="Абонплата и подписки" name="notifySubscriptions" valuePropName="checked">
-              <Switch defaultChecked />
-            </Form.Item>
-          </Space>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 }}>
-            <Space>
-              <Button
-                icon={<SendOutlined />}
-                onClick={() => testTgMutation.mutate()}
-                loading={testTgMutation.isPending}
-              >
-                Тест в Telegram
-              </Button>
-              <Button
-                icon={<SyncOutlined />}
-                onClick={() => triggerCronMutation.mutate()}
-                loading={triggerCronMutation.isPending}
-              >
-                Запустить Cron сейчас
-              </Button>
-            </Space>
-
-            <Button type="primary" htmlType="submit" loading={saveTgMutation.isPending}>
-              Сохранить
-            </Button>
+        {isTgLoading ? (
+          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <Spin size="large" />
           </div>
-        </Form>
+        ) : tgConfig?.isConnected ? (
+          <div>
+            <Card
+              style={{
+                background: isDark ? '#162312' : '#f6ffed',
+                borderColor: '#b7eb8f',
+                marginBottom: 20,
+              }}
+            >
+              <Space align="start">
+                <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 28, marginTop: 4 }} />
+                <div>
+                  <Title level={5} style={{ margin: 0, color: '#389e0d' }}>
+                    Telegram успешно подключен!
+                  </Title>
+                  <Text type="secondary" style={{ fontSize: 13 }}>
+                    Уведомления отправляются получателю: <b>{tgConfig.username || 'Пользователь'}</b> (Chat ID: {tgConfig.chatId})
+                  </Text>
+                </div>
+              </Space>
+            </Card>
+
+            <Form
+              layout="vertical"
+              form={tgForm}
+              initialValues={tgConfig}
+              onFinish={(values) => saveTgMutation.mutate(values)}
+            >
+              <Form.Item label="Уведомления активны" name="isEnabled" valuePropName="checked">
+                <Switch checkedChildren="Включено" unCheckedChildren="Выключено" />
+              </Form.Item>
+
+              <Divider orientation="left" style={{ fontSize: 13 }}>
+                Какие события присылать в Telegram:
+              </Divider>
+
+              <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
+                <Form.Item label="🎯 Новые лиды и заявки" name="notifyLeads" valuePropName="checked">
+                  <Switch defaultChecked />
+                </Form.Item>
+                <Form.Item label="🛍 Новые заказы клиентов" name="notifyOrders" valuePropName="checked">
+                  <Switch defaultChecked />
+                </Form.Item>
+                <Form.Item label="💳 Оплаты и чеки" name="notifyPayments" valuePropName="checked">
+                  <Switch defaultChecked />
+                </Form.Item>
+                <Form.Item label="⏰ Напоминания о подписках и дедлайнах" name="notifySubscriptions" valuePropName="checked">
+                  <Switch defaultChecked />
+                </Form.Item>
+              </Space>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 }}>
+                <Space>
+                  <Button
+                    icon={<SendOutlined />}
+                    onClick={() => testTgMutation.mutate()}
+                    loading={testTgMutation.isPending}
+                  >
+                    Тест в Telegram
+                  </Button>
+                  <Button
+                    icon={<SyncOutlined />}
+                    onClick={() => triggerCronMutation.mutate()}
+                    loading={triggerCronMutation.isPending}
+                  >
+                    Запустить Cron
+                  </Button>
+                  <Button
+                    danger
+                    type="text"
+                    icon={<DisconnectOutlined />}
+                    onClick={() => disconnectMutation.mutate()}
+                    loading={disconnectMutation.isPending}
+                  >
+                    Отключить
+                  </Button>
+                </Space>
+
+                <Button type="primary" htmlType="submit" loading={saveTgMutation.isPending}>
+                  Сохранить
+                </Button>
+              </div>
+            </Form>
+          </div>
+        ) : (
+          <div>
+            <Alert
+              message="Мгновенные уведомления прямо в Telegram"
+              description="Подключите бота в 1 клик, чтобы получать информацию о новых лидах, заказах, скорой оплате и просрочке подписок ваших клиентов."
+              type="info"
+              showIcon
+              style={{ marginBottom: 20 }}
+            />
+
+            <Card
+              style={{
+                textAlign: 'center',
+                padding: '16px 0',
+                background: isDark ? '#1a1a1a' : '#f9f9f9',
+                borderRadius: 12,
+                marginBottom: 20,
+              }}
+            >
+              <SendOutlined style={{ fontSize: 44, color: '#1677ff', marginBottom: 12 }} />
+              <Title level={4} style={{ marginBottom: 8 }}>
+                Подключение за 5 секунд
+              </Title>
+              <Paragraph type="secondary" style={{ maxWidth: 420, margin: '0 auto 20px' }}>
+                Нажмите кнопку ниже, чтобы открыть официального бота <b>@{tgConfig?.botUsername || 'mycrm_notification_bot'}</b> и нажмите кнопку <b>START</b> в Telegram.
+              </Paragraph>
+
+              <Button
+                type="primary"
+                size="large"
+                shape="round"
+                icon={<SendOutlined />}
+                href={tgConfig?.connectUrl}
+                target="_blank"
+                style={{
+                  height: 48,
+                  padding: '0 32px',
+                  fontSize: 16,
+                  fontWeight: 600,
+                  background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
+                  boxShadow: '0 4px 14px rgba(22, 119, 255, 0.4)',
+                }}
+              >
+                📲 Подключить Telegram в 1 клик
+              </Button>
+
+              <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <Spin size="small" />
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Ожидаем нажатия кнопки START в боте...
+                </Text>
+              </div>
+            </Card>
+          </div>
+        )}
       </Modal>
     </ConfigProvider>
   );

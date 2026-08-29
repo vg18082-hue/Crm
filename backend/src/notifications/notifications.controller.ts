@@ -16,14 +16,28 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get('telegram-config')
-  @ApiOperation({ summary: 'Получить настройки Telegram бота компании' })
+  @ApiOperation({ summary: 'Получить статус подключения и ссылку для Telegram бота' })
   getTelegramConfig(@CurrentTenantId() tenantId: string) {
     return this.notificationsService.getTelegramConfig(tenantId);
   }
 
+  @Post('telegram-regenerate-link')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Сгенерировать новую ссылку для подключения бота' })
+  regenerateLink(@CurrentTenantId() tenantId: string) {
+    return this.notificationsService.regenerateConnectLink(tenantId);
+  }
+
+  @Post('telegram-disconnect')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Отключить Telegram бота для компании' })
+  disconnectTelegram(@CurrentTenantId() tenantId: string) {
+    return this.notificationsService.disconnectTelegram(tenantId);
+  }
+
   @Patch('telegram-config')
   @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Обновить настройки Telegram бота (Только Администратор)' })
+  @ApiOperation({ summary: 'Обновить настройки Telegram (переключатели уведомлений)' })
   updateTelegramConfig(
     @CurrentTenantId() tenantId: string,
     @Body() dto: UpdateTelegramConfigDto,

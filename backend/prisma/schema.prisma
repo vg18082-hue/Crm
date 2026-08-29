@@ -486,6 +486,8 @@ model TelegramConfig {
   tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   botToken           String?
   chatId             String?
+  linkCode           String?  @unique
+  username           String?
   isEnabled          Boolean  @default(false)
   notifyLeads        Boolean  @default(true)
   notifyOrders       Boolean  @default(true)
