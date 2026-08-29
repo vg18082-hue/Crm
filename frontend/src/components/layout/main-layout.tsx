@@ -81,6 +81,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     refetchInterval: isTgModalOpen ? 3000 : false,
   });
 
+  React.useEffect(() => {
+    if (tgConfig) {
+      tgForm.setFieldsValue(tgConfig);
+    }
+  }, [tgConfig, tgForm]);
+
   // Save Telegram Toggles
   const saveTgMutation = useMutation({
     mutationFn: async (values: any) => {
@@ -439,33 +445,126 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             </Card>
 
             <Form
-              layout="vertical"
               form={tgForm}
               initialValues={tgConfig}
               onFinish={(values) => saveTgMutation.mutate(values)}
             >
-              <Form.Item label="Уведомления активны" name="isEnabled" valuePropName="checked">
-                <Switch checkedChildren="Включено" unCheckedChildren="Выключено" />
-              </Form.Item>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px 16px',
+                  background: isDark ? '#1f1f1f' : '#fafafa',
+                  borderRadius: 8,
+                  marginBottom: 16,
+                  border: isDark ? '1px solid #303030' : '1px solid #f0f0f0',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>🔔 Уведомления активны</div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Главный переключатель отправки сообщений
+                  </Text>
+                </div>
+                <Form.Item name="isEnabled" valuePropName="checked" noStyle>
+                  <Switch checkedChildren="Вкл" unCheckedChildren="Выкл" />
+                </Form.Item>
+              </div>
 
-              <Divider orientation="left" style={{ fontSize: 13 }}>
+              <Divider orientation="left" style={{ fontSize: 13, margin: '16px 0 12px' }}>
                 Какие события присылать в Telegram:
               </Divider>
 
-              <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
-                <Form.Item label="🎯 Новые лиды и заявки" name="notifyLeads" valuePropName="checked">
-                  <Switch defaultChecked />
-                </Form.Item>
-                <Form.Item label="🛍 Новые заказы клиентов" name="notifyOrders" valuePropName="checked">
-                  <Switch defaultChecked />
-                </Form.Item>
-                <Form.Item label="💳 Оплаты и чеки" name="notifyPayments" valuePropName="checked">
-                  <Switch defaultChecked />
-                </Form.Item>
-                <Form.Item label="⏰ Напоминания о подписках и дедлайнах" name="notifySubscriptions" valuePropName="checked">
-                  <Switch defaultChecked />
-                </Form.Item>
-              </Space>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: isDark ? '#191919' : '#fff',
+                    border: isDark ? '1px solid #2a2a2a' : '1px solid #eee',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>🎯 Новые лиды и заявки</div>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      Имя, телефон, компания, сумма и источник
+                    </Text>
+                  </div>
+                  <Form.Item name="notifyLeads" valuePropName="checked" noStyle>
+                    <Switch />
+                  </Form.Item>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: isDark ? '#191919' : '#fff',
+                    border: isDark ? '1px solid #2a2a2a' : '1px solid #eee',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>🛍 Новые заказы клиентов</div>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      Номер заказа, сумма и состав товаров
+                    </Text>
+                  </div>
+                  <Form.Item name="notifyOrders" valuePropName="checked" noStyle>
+                    <Switch />
+                  </Form.Item>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: isDark ? '#191919' : '#fff',
+                    border: isDark ? '1px solid #2a2a2a' : '1px solid #eee',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>💳 Оплаты и продления</div>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      Подтверждения платежей и чеки
+                    </Text>
+                  </div>
+                  <Form.Item name="notifyPayments" valuePropName="checked" noStyle>
+                    <Switch />
+                  </Form.Item>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: isDark ? '#191919' : '#fff',
+                    border: isDark ? '1px solid #2a2a2a' : '1px solid #eee',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>⏰ Напоминания о подписках и дедлайнах</div>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      Авто-проверка за 7/3/0 дней и просрочки (Bull & Cron)
+                    </Text>
+                  </div>
+                  <Form.Item name="notifySubscriptions" valuePropName="checked" noStyle>
+                    <Switch />
+                  </Form.Item>
+                </div>
+              </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 }}>
                 <Space>
