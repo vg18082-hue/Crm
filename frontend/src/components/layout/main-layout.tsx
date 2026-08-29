@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AppstoreOutlined,
   CheckSquareOutlined,
@@ -13,26 +14,109 @@ import {
   MenuUnfoldOutlined,
   MoonOutlined,
   RocketOutlined,
+  SendOutlined,
+  SettingOutlined,
   ShoppingOutlined,
   SunOutlined,
+  SyncOutlined,
   TeamOutlined,
   UserOutlined,
   UsergroupAddOutlined,
 } from '@ant-design/icons';
-import { Avatar, Button, ConfigProvider, Dropdown, Layout, Menu, Space, Tag, Tooltip, theme } from 'antd';
+import {
+  Alert,
+  Avatar,
+  Button,
+  ConfigProvider,
+  Divider,
+  Dropdown,
+  Form,
+  Input,
+  Layout,
+  Menu,
+  Modal,
+  Space,
+  Switch,
+  Tag,
+  Tooltip,
+  message,
+  theme,
+} from 'antd';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
+import { apiClient } from '@/lib/api-client';
 
 const { Header, Sider, Content } = Layout;
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [isTgModalOpen, setIsTgModalOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
   const { mode, toggleTheme } = useTheme();
+  const queryClient = useQueryClient();
+  const [tgForm] = Form.useForm();
 
   const isDark = mode === 'dark';
+
+  // Fetch Telegram Config
+  const { data: tgConfig } = useQuery({
+    queryKey: ['telegram-config'],
+    queryFn: async () => {
+      if (!user) return null;
+      const res = await apiClient.get('/notifications/telegram-config');
+      return res.data;
+    },
+    enabled: !!user,
+  });
+
+  // Save Telegram Config
+  const saveTgMutation = useMutation({
+    mutationFn: async (values: any) => {
+      return apiClient.patch('/notifications/telegram-config', values);
+    },
+    onSuccess: () => {
+      message.success('Настройки Telegram успешно сохранены');
+      queryClient.invalidateQueries({ queryKey: ['telegram-config'] });
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Ошибка сохранения настроек');
+    },
+  });
+
+  // Test Telegram Message
+  const testTgMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post('/notifications/telegram-test');
+      return res.data;
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        message.success(data.message);
+      } else {
+        message.error(data.message);
+      }
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Ошибка отправки тестового сообщения');
+    },
+  });
+
+  // Trigger Cron & Bull Jobs manually
+  const triggerCronMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post('/jobs/trigger-cron-now');
+      return res.data;
+    },
+    onSuccess: (data) => {
+      message.success(data.message || 'Очереди Bull успешно запущены!');
+      queryClient.invalidateQueries();
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Ошибка запуска фоновых задач');
+    },
+  });
 
   const menuItems = [
     {
@@ -101,6 +185,20 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       type: 'divider' as const,
     },
     {
+      key: 'telegram-settings',
+      icon: <SendOutlined style={{ color: '#1677ff' }} />,
+      label: 'Telegram & Очереди Bull',
+      onClick: () => {
+        if (tgConfig) {
+          tgForm.setFieldsValue(tgConfig);
+        }
+        setIsTgModalOpen(true);
+      },
+    },
+    {
+      type: 'divider' as const,
+    },
+    {
       key: 'logout',
       icon: <LogoutOutlined />,
       label: 'Выйти из аккаунта',
@@ -109,7 +207,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     },
   ];
 
-  // For login or register page, render content with theme provider and header toggle button
+  // For login or register page
   if (pathname === '/login' || pathname === '/register') {
     return (
       <ConfigProvider
@@ -203,6 +301,25 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             />
 
             <Space size="middle">
+              {/* Telegram & Bot Quick Setup Button */}
+              <Tooltip title="Настройки Telegram уведомлений и Cron">
+                <Button
+                  type="primary"
+                  ghost
+                  shape="round"
+                  icon={<SendOutlined style={{ color: '#1677ff' }} />}
+                  onClick={() => {
+                    if (tgConfig) {
+                      tgForm.setFieldsValue(tgConfig);
+                    }
+                    setIsTgModalOpen(true);
+                  }}
+                  style={{ fontWeight: 500 }}
+                >
+                  Telegram Бот
+                </Button>
+              </Tooltip>
+
               {/* Theme Toggle Button */}
               <Tooltip title={isDark ? 'Включить Светлую тему' : 'Включить Тёмную тему'}>
                 <Button
@@ -250,6 +367,88 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
           </Content>
         </Layout>
       </Layout>
+
+      {/* Telegram & Automation Settings Modal */}
+      <Modal
+        title="🤖 Настройки Telegram-бота и Очередей Bull"
+        open={isTgModalOpen}
+        onCancel={() => setIsTgModalOpen(false)}
+        footer={null}
+        width={560}
+      >
+        <Alert
+          message="Автоматические уведомления и Cron"
+          description="Бот автоматически присылает уведомления о новых лидах, заказах, дедлайнах задач, скорой оплате и просрочке подписок (за 7 дней, за 3 дня и в день платежа)."
+          type="info"
+          showIcon
+          style={{ marginBottom: 20 }}
+        />
+
+        <Form
+          layout="vertical"
+          form={tgForm}
+          initialValues={tgConfig}
+          onFinish={(values) => saveTgMutation.mutate(values)}
+        >
+          <Form.Item label="Включить Telegram-уведомления" name="isEnabled" valuePropName="checked">
+            <Switch checkedChildren="Включено" unCheckedChildren="Выключено" />
+          </Form.Item>
+
+          <Form.Item label="Telegram Bot Token" name="botToken" tooltip="Получите у @BotFather в Telegram">
+            <Input placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ" size="large" />
+          </Form.Item>
+
+          <Form.Item
+            label="Chat ID / Group ID"
+            name="chatId"
+            tooltip="ID личного чата или рабочей группы (например: -1001234567890 или ваш user ID)"
+          >
+            <Input placeholder="-1001234567890" size="large" />
+          </Form.Item>
+
+          <Divider orientation="left" style={{ fontSize: 13 }}>
+            Типы событий для отправки:
+          </Divider>
+
+          <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
+            <Form.Item label="Новые лиды" name="notifyLeads" valuePropName="checked">
+              <Switch defaultChecked />
+            </Form.Item>
+            <Form.Item label="Новые заказы" name="notifyOrders" valuePropName="checked">
+              <Switch defaultChecked />
+            </Form.Item>
+            <Form.Item label="Оплаты и чеки" name="notifyPayments" valuePropName="checked">
+              <Switch defaultChecked />
+            </Form.Item>
+            <Form.Item label="Абонплата и подписки" name="notifySubscriptions" valuePropName="checked">
+              <Switch defaultChecked />
+            </Form.Item>
+          </Space>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 }}>
+            <Space>
+              <Button
+                icon={<SendOutlined />}
+                onClick={() => testTgMutation.mutate()}
+                loading={testTgMutation.isPending}
+              >
+                Тест в Telegram
+              </Button>
+              <Button
+                icon={<SyncOutlined />}
+                onClick={() => triggerCronMutation.mutate()}
+                loading={triggerCronMutation.isPending}
+              >
+                Запустить Cron сейчас
+              </Button>
+            </Space>
+
+            <Button type="primary" htmlType="submit" loading={saveTgMutation.isPending}>
+              Сохранить
+            </Button>
+          </div>
+        </Form>
+      </Modal>
     </ConfigProvider>
   );
 }

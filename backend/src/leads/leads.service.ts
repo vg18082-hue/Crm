@@ -1,17 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { LeadStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 
 @Injectable()
 export class LeadsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async create(tenantId: string, dto: CreateLeadDto) {
     const nextContactDate = dto.nextContactDate ? new Date(dto.nextContactDate) : undefined;
 
-    return this.prisma.lead.create({
+    const lead = await this.prisma.lead.create({
       data: {
         name: dto.name,
         phone: dto.phone,
@@ -33,6 +37,19 @@ export class LeadsService {
         },
       },
     });
+
+    // Send Telegram alert if enabled
+    const text = `🎯 <b>Новый Лид в CRM!</b>\n\n` +
+      `👤 Имя: <b>${lead.name}</b>\n` +
+      (lead.phone ? `📞 Телефон: ${lead.phone}\n` : '') +
+      (lead.company ? `🏢 Компания: ${lead.company}\n` : '') +
+      (lead.source ? `🌐 Источник: ${lead.source}\n` : '') +
+      (lead.interestedIn ? `📦 Интерес: ${lead.interestedIn}\n` : '') +
+      (lead.potentialAmount ? `💰 Потенциал: ${Number(lead.potentialAmount).toLocaleString()} сум\n` : '');
+
+    this.notificationsService.sendTelegramMessage(tenantId, text).catch(() => {});
+
+    return lead;
   }
 
   async findAll(tenantId: string, status?: LeadStatus, search?: string) {

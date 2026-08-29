@@ -13,6 +13,8 @@ import { PaymentsModule } from './payments/payments.module';
 import { TasksModule } from './tasks/tasks.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { JobsModule } from './jobs/jobs.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
     TasksModule,
     SubscriptionsModule,
     DashboardModule,
+    NotificationsModule,
+    JobsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

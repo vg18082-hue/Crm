@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async create(tenantId: string, dto: CreateOrderDto) {
     const items = dto.items || [];
@@ -31,7 +35,7 @@ export class OrdersService {
     const orderNumber = dto.orderNumber || `ORD-${Date.now().toString().slice(-6)}`;
     const completionDate = dto.completionDate ? new Date(dto.completionDate) : undefined;
 
-    return this.prisma.order.create({
+    const order = await this.prisma.order.create({
       data: {
         orderNumber,
         clientId: dto.clientId,
@@ -54,6 +58,17 @@ export class OrdersService {
         payments: true,
       },
     });
+
+    // Send Telegram alert
+    const text = `🛍 <b>Новый Заказ #${order.orderNumber}!</b>\n\n` +
+      `👤 Клиент: <b>${order.client.name}</b>\n` +
+      `💰 Сумма: <b>${Number(order.amount).toLocaleString()} сум</b>\n` +
+      `💳 Оплата: ${order.paymentMethod}\n` +
+      (order.comment ? `📝 Комментарий: ${order.comment}\n` : '');
+
+    this.notificationsService.sendTelegramMessage(tenantId, text).catch(() => {});
+
+    return order;
   }
 
   async findAll(tenantId: string, status?: OrderStatus, clientId?: string, search?: string) {

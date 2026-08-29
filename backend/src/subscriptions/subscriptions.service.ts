@@ -1,18 +1,22 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateClientSubscriptionDto } from './dto/create-client-subscription.dto';
 import { RecordSubscriptionPaymentDto } from './dto/record-subscription-payment.dto';
 
 @Injectable()
 export class SubscriptionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async create(tenantId: string, dto: CreateClientSubscriptionDto) {
     const startDate = dto.startDate ? new Date(dto.startDate) : new Date();
     const nextPaymentDate = new Date(dto.nextPaymentDate);
 
-    return this.prisma.clientSubscription.create({
+    const sub = await this.prisma.clientSubscription.create({
       data: {
         clientId: dto.clientId,
         planName: dto.planName,
@@ -30,6 +34,16 @@ export class SubscriptionsService {
         client: true,
       },
     });
+
+    const text = `🚀 <b>Новая Абонентская Подписка!</b>\n\n` +
+      `👤 Клиент: <b>${sub.client.name}</b>\n` +
+      `💼 Тариф: ${sub.planName}\n` +
+      `💰 Сумма: <b>${Number(sub.amount).toLocaleString()} сум</b>\n` +
+      `📅 След. платеж: ${new Date(sub.nextPaymentDate).toLocaleDateString('ru-RU')}`;
+
+    this.notificationsService.sendTelegramMessage(tenantId, text).catch(() => {});
+
+    return sub;
   }
 
   async findAll(tenantId: string, status?: SubscriptionStatus, search?: string) {
@@ -80,7 +94,7 @@ export class SubscriptionsService {
     const newNextPaymentDate = new Date(subscription.nextPaymentDate);
     newNextPaymentDate.setMonth(newNextPaymentDate.getMonth() + (subscription.periodMonths || 1));
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedSub = await this.prisma.$transaction(async (tx) => {
       // 1. Register payment record
       await tx.payment.create({
         data: {
@@ -94,7 +108,7 @@ export class SubscriptionsService {
       });
 
       // 2. Update Subscription status to ACTIVE & update dates
-      const updatedSub = await tx.clientSubscription.update({
+      return tx.clientSubscription.update({
         where: { id },
         data: {
           status: SubscriptionStatus.ACTIVE,
@@ -106,9 +120,19 @@ export class SubscriptionsService {
           client: true,
         },
       });
-
-      return updatedSub;
     });
+
+    // Send Telegram notification on successful renewal
+    const text = `💳 <b>Оплата подписки и Автопродление!</b>\n\n` +
+      `👤 Клиент: <b>${updatedSub.client.name}</b>\n` +
+      `💼 Тариф: ${updatedSub.planName}\n` +
+      `💰 Оплачено: <b>${Number(paidAmount).toLocaleString()} сум</b>\n` +
+      `🟢 Статус: АКТИВНА\n` +
+      `📅 Следующая дата оплаты: <b>${new Date(newNextPaymentDate).toLocaleDateString('ru-RU')}</b>`;
+
+    this.notificationsService.sendTelegramMessage(tenantId, text).catch(() => {});
+
+    return updatedSub;
   }
 
   async updateStatus(tenantId: string, id: string, status: SubscriptionStatus) {
