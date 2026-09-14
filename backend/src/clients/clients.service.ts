@@ -8,11 +8,26 @@ export class ClientsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(tenantId: string, dto: CreateClientDto) {
+    const data: any = {
+      ...dto,
+      tenantId,
+    };
+
+    // Clean up empty optional fields
+    if (!data.assignedToId || typeof data.assignedToId !== 'string' || data.assignedToId.trim() === '') {
+      delete data.assignedToId;
+    } else {
+      // Verify user exists and belongs to this tenant
+      const userExists = await this.prisma.user.findFirst({
+        where: { id: data.assignedToId, tenantId },
+      });
+      if (!userExists) {
+        delete data.assignedToId;
+      }
+    }
+
     return this.prisma.client.create({
-      data: {
-        ...dto,
-        tenantId,
-      },
+      data,
       include: {
         assignedTo: {
           select: { id: true, name: true, email: true },
@@ -96,9 +111,21 @@ export class ClientsService {
   async update(tenantId: string, id: string, dto: UpdateClientDto) {
     await this.findOne(tenantId, id);
 
+    const data: any = { ...dto };
+    if (data.assignedToId === '' || data.assignedToId === null) {
+      data.assignedToId = null;
+    } else if (data.assignedToId) {
+      const userExists = await this.prisma.user.findFirst({
+        where: { id: data.assignedToId, tenantId },
+      });
+      if (!userExists) {
+        data.assignedToId = null;
+      }
+    }
+
     return this.prisma.client.update({
       where: { id },
-      data: dto,
+      data,
       include: {
         assignedTo: {
           select: { id: true, name: true, email: true },

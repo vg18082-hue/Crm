@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -10,6 +11,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateProfileDto, UpdateTenantDto } from './dto/update-profile.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 
 @Injectable()
@@ -133,6 +137,80 @@ export class AuthService {
     };
   }
 
+  async refreshTokens(dto: RefreshTokenDto): Promise<AuthResponseDto> {
+    const secret = process.env.JWT_SECRET || 'crm_super_secret_jwt_key';
+    try {
+      const payload: JwtPayload = await this.jwtService.verifyAsync(dto.refreshToken, { secret });
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        include: { tenant: true },
+      });
+
+      if (!user || !user.tenant.isActive) {
+        throw new UnauthorizedException('Недействительный refresh token или компания не активна');
+      }
+
+      const tokens = await this.generateTokens({
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        tenantId: user.tenantId,
+      });
+
+      return {
+        ...tokens,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          tenantId: user.tenantId,
+          tenantName: user.tenant.name,
+        },
+      };
+    } catch (err) {
+      throw new UnauthorizedException('Срок действия refresh token истек или токен недействителен');
+    }
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('Пользователь не найден');
+    }
+
+    const isMatch = await bcrypt.compare(dto.currentPassword, user.password);
+    if (!isMatch) {
+      throw new BadRequestException('Неверный текущий пароль');
+    }
+
+    const newHashedPassword = await bcrypt.hash(dto.newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: newHashedPassword },
+    });
+
+    return { success: true, message: 'Пароль успешно изменен' };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: dto.name,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        tenantId: true,
+      },
+    });
+
+    return updated;
+  }
+
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -166,6 +244,45 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async getTenant(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: {
+        subscriptions: {
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+          include: { payments: { take: 5, orderBy: { paymentDate: 'desc' } } },
+        },
+        _count: {
+          select: {
+            users: true,
+            clients: true,
+            leads: true,
+            sales: true,
+            orders: true,
+            products: true,
+            clientSubscriptions: true,
+          },
+        },
+      },
+    });
+
+    if (!tenant) {
+      throw new UnauthorizedException('Компания не найдена');
+    }
+
+    return tenant;
+  }
+
+  async updateTenant(tenantId: string, dto: UpdateTenantDto) {
+    return this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        name: dto.name,
+      },
+    });
   }
 
   private async generateTokens(payload: JwtPayload): Promise<{ accessToken: string; refreshToken: string }> {

@@ -15,21 +15,28 @@ export class LeadsService {
   async create(tenantId: string, dto: CreateLeadDto) {
     const nextContactDate = dto.nextContactDate ? new Date(dto.nextContactDate) : undefined;
 
+    const data: any = {
+      name: dto.name,
+      phone: dto.phone,
+      company: dto.company,
+      source: dto.source,
+      interestedIn: dto.interestedIn,
+      potentialAmount: dto.potentialAmount,
+      comment: dto.comment,
+      nextContactDate,
+      status: dto.status || LeadStatus.NEW,
+      tenantId,
+    };
+
+    if (dto.clientId && dto.clientId.trim() !== '') {
+      data.clientId = dto.clientId;
+    }
+    if (dto.assignedToId && dto.assignedToId.trim() !== '') {
+      data.assignedToId = dto.assignedToId;
+    }
+
     const lead = await this.prisma.lead.create({
-      data: {
-        name: dto.name,
-        phone: dto.phone,
-        company: dto.company,
-        source: dto.source,
-        interestedIn: dto.interestedIn,
-        potentialAmount: dto.potentialAmount,
-        comment: dto.comment,
-        nextContactDate,
-        status: dto.status || LeadStatus.NEW,
-        clientId: dto.clientId,
-        assignedToId: dto.assignedToId,
-        tenantId,
-      },
+      data,
       include: {
         client: true,
         assignedTo: {
@@ -108,13 +115,17 @@ export class LeadsService {
     await this.findOne(tenantId, id);
 
     const nextContactDate = dto.nextContactDate ? new Date(dto.nextContactDate) : undefined;
+    const data: any = {
+      ...dto,
+      nextContactDate,
+    };
+
+    if (data.assignedToId === '') data.assignedToId = null;
+    if (data.clientId === '') data.clientId = null;
 
     return this.prisma.lead.update({
       where: { id },
-      data: {
-        ...dto,
-        nextContactDate,
-      },
+      data,
       include: {
         client: true,
         assignedTo: {

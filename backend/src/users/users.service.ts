@@ -50,6 +50,15 @@ export class UsersService {
         tenantId: true,
         createdAt: true,
         updatedAt: true,
+        _count: {
+          select: {
+            assignedClients: true,
+            assignedLeads: true,
+            assignedSales: true,
+            assignedOrders: true,
+            tasks: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -66,6 +75,15 @@ export class UsersService {
         tenantId: true,
         createdAt: true,
         updatedAt: true,
+        _count: {
+          select: {
+            assignedClients: true,
+            assignedLeads: true,
+            assignedSales: true,
+            assignedOrders: true,
+            tasks: true,
+          },
+        },
       },
     });
 

@@ -5,7 +5,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
+  DeleteOutlined,
   DollarOutlined,
+  DownloadOutlined,
   ExclamationCircleOutlined,
   PlusOutlined,
   RocketOutlined,
@@ -20,6 +22,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
@@ -31,6 +34,8 @@ import {
 } from 'antd';
 import dayjs from 'dayjs';
 import { apiClient } from '@/lib/api-client';
+import { exportToCSV } from '@/lib/export-csv';
+import { showApiError } from '@/lib/error-handler';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -39,6 +44,8 @@ export default function SubscriptionsPage() {
   const queryClient = useQueryClient();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [paySub, setPaySub] = useState<any>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
   const [form] = Form.useForm();
   const [payForm] = Form.useForm();
 
@@ -75,7 +82,7 @@ export default function SubscriptionsPage() {
       queryClient.invalidateQueries({ queryKey: ['subscriptions-dashboard'] });
     },
     onError: (err: any) => {
-      message.error(err.response?.data?.message || 'Ошибка создания подписки');
+      showApiError(err, 'Ошибка создания абонентской подписки');
     },
   });
 
@@ -85,13 +92,27 @@ export default function SubscriptionsPage() {
       return apiClient.post(`/subscriptions/${id}/pay`, values);
     },
     onSuccess: () => {
-      message.success('Оплата зафиксирована! Дата следующего платежа успешно продлена на 1 месяц.');
+      message.success('Оплата зафиксирована! Дата следующего платежа успешно продлена.');
       setPaySub(null);
       payForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['subscriptions-dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['payments-list'] });
     },
     onError: (err: any) => {
-      message.error(err.response?.data?.message || 'Ошибка проведения оплаты');
+      showApiError(err, 'Ошибка проведения оплаты подписки');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiClient.delete(`/subscriptions/${id}`);
+    },
+    onSuccess: () => {
+      message.success('Подписка удалена');
+      queryClient.invalidateQueries({ queryKey: ['subscriptions-dashboard'] });
+    },
+    onError: (err: any) => {
+      showApiError(err, 'Ошибка удаления подписки');
     },
   });
 
@@ -104,7 +125,12 @@ export default function SubscriptionsPage() {
   }
 
   const kpi = dashData?.kpi || {};
-  const subscriptions = dashData?.subscriptions || [];
+  const allSubscriptions = dashData?.subscriptions || [];
+
+  const filteredSubscriptions = allSubscriptions.filter((s: any) => {
+    if (statusFilter === 'ALL') return true;
+    return s.status === statusFilter;
+  });
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -121,6 +147,31 @@ export default function SubscriptionsPage() {
       default:
         return <Tag>{status}</Tag>;
     }
+  };
+
+  const handleExport = () => {
+    if (!filteredSubscriptions || filteredSubscriptions.length === 0) return;
+    exportToCSV(
+      'subscriptions_export',
+      filteredSubscriptions.map((s: any) => ({
+        clientName: s.client?.name || '—',
+        planName: s.planName,
+        amount: s.amount,
+        status: s.status,
+        nextPaymentDate: dayjs(s.nextPaymentDate).format('DD.MM.YYYY'),
+        paymentMethod: s.paymentMethod,
+        periodMonths: s.periodMonths,
+      })),
+      [
+        { key: 'clientName', title: 'Клиент' },
+        { key: 'planName', title: 'Тариф' },
+        { key: 'amount', title: 'Сумма (сум)' },
+        { key: 'status', title: 'Статус' },
+        { key: 'nextPaymentDate', title: 'Следующая оплата' },
+        { key: 'paymentMethod', title: 'Способ оплаты' },
+        { key: 'periodMonths', title: 'Период (мес)' },
+      ],
+    );
   };
 
   const columns = [
@@ -141,10 +192,11 @@ export default function SubscriptionsPage() {
       dataIndex: 'amount',
       key: 'amount',
       render: (val: any) => (
-        <span style={{ fontWeight: 700 }}>
+        <span style={{ fontWeight: 700, color: '#52c41a' }}>
           {Number(val).toLocaleString()} сум
         </span>
       ),
+      sorter: (a: any, b: any) => Number(a.amount || 0) - Number(b.amount || 0),
     },
     {
       title: 'Следующая оплата',
@@ -155,6 +207,7 @@ export default function SubscriptionsPage() {
           {dayjs(date).format('DD.MM.YYYY')}
         </span>
       ),
+      sorter: (a: any, b: any) => new Date(a.nextPaymentDate).getTime() - new Date(b.nextPaymentDate).getTime(),
     },
     {
       title: 'Статус',
@@ -167,18 +220,28 @@ export default function SubscriptionsPage() {
       key: 'actions',
       align: 'right' as const,
       render: (_: any, record: any) => (
-        <Button
-          type="primary"
-          icon={<DollarOutlined />}
-          size="small"
-          style={{ borderRadius: 6 }}
-          onClick={() => {
-            setPaySub(record);
-            payForm.setFieldsValue({ amount: Number(record.amount), paymentMethod: 'TRANSFER' });
-          }}
-        >
-          Принять оплату (Продлить)
-        </Button>
+        <Space>
+          <Button
+            type="primary"
+            icon={<DollarOutlined />}
+            size="small"
+            style={{ borderRadius: 6 }}
+            onClick={() => {
+              setPaySub(record);
+              payForm.setFieldsValue({ amount: Number(record.amount), paymentMethod: 'TRANSFER' });
+            }}
+          >
+            Продлить
+          </Button>
+          <Popconfirm
+            title="Удалить подписку?"
+            onConfirm={() => deleteMutation.mutate(record.id)}
+            okText="Да"
+            cancelText="Отмена"
+          >
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -192,15 +255,31 @@ export default function SubscriptionsPage() {
           </Title>
           <Text type="secondary">Учет регулярной оплаты клиентов за CRM, серверы и сопровождение</Text>
         </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          size="large"
-          style={{ borderRadius: 8 }}
-          onClick={() => setIsCreateOpen(true)}
-        >
-          Создать подписку
-        </Button>
+        <Space>
+          <Select
+            value={statusFilter}
+            onChange={setStatusFilter}
+            style={{ width: 170 }}
+            size="large"
+          >
+            <Option value="ALL">Все статусы</Option>
+            <Option value="ACTIVE">🟢 Активные</Option>
+            <Option value="DUE_SOON">🟡 Скоро оплата</Option>
+            <Option value="OVERDUE">🔴 Просроченные</Option>
+          </Select>
+          <Button icon={<DownloadOutlined />} size="large" onClick={handleExport}>
+            Экспорт в CSV
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            size="large"
+            style={{ borderRadius: 8 }}
+            onClick={() => setIsCreateOpen(true)}
+          >
+            Создать подписку
+          </Button>
+        </Space>
       </div>
 
       {/* KPI Section */}
@@ -276,7 +355,7 @@ export default function SubscriptionsPage() {
 
       {/* Main Subscriptions Table */}
       <Card style={{ borderRadius: 12 }}>
-        <Table dataSource={subscriptions} rowKey="id" columns={columns} pagination={{ pageSize: 10 }} />
+        <Table dataSource={filteredSubscriptions} rowKey="id" columns={columns} pagination={{ pageSize: 10 }} />
       </Card>
 
       {/* Create Subscription Modal */}
@@ -288,7 +367,7 @@ export default function SubscriptionsPage() {
       >
         <Form layout="vertical" form={form} onFinish={(values) => createMutation.mutate(values)}>
           <Form.Item label="Клиент" name="clientId" rules={[{ required: true, message: 'Выберите клиента' }]}>
-            <Select placeholder="Выберите клиента из базы" size="large">
+            <Select placeholder="Выберите клиента из базы" size="large" showSearch optionFilterProp="children">
               {clientsList?.map((c: any) => (
                 <Option key={c.id} value={c.id}>
                   {c.name} ({c.phone || c.email || 'Без телефона'})
@@ -360,7 +439,7 @@ export default function SubscriptionsPage() {
           <div>
             <Alert
               message={`Принятие оплаты от клиента ${paySub.client?.name}`}
-              description={`При фиксации оплаты статус изменится на АКТИВНА, а дата следующего платежа автоматически передвинется на +1 месяц (до ${dayjs(paySub.nextPaymentDate).add(1, 'month').format('DD.MM.YYYY')}).`}
+              description={`При фиксации оплаты статус изменится на АКТИВНА, а дата следующего платежа автоматически передвинется на +1 месяц.`}
               type="info"
               showIcon
               style={{ marginBottom: 20 }}

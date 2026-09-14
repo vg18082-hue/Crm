@@ -205,31 +205,25 @@ export class DashboardService {
       revenueByPlanRaw,
       subsList,
     ] = await Promise.all([
-      // Active subscriptions
       this.prisma.clientSubscription.findMany({
         where: { tenantId, status: SubscriptionStatus.ACTIVE },
       }),
-      // Due soon (within 7 days)
       this.prisma.clientSubscription.findMany({
         where: { tenantId, nextPaymentDate: { lte: in7Days, gte: now } },
       }),
-      // Overdue
       this.prisma.clientSubscription.findMany({
         where: { tenantId, nextPaymentDate: { lt: now }, status: { not: SubscriptionStatus.CANCELLED } },
       }),
-      // Payments received this month
       this.prisma.payment.aggregate({
         where: { tenantId, createdAt: { gte: startOfMonth }, status: SaleStatus.PAID },
         _sum: { amount: true },
       }),
-      // Revenue by plan
       this.prisma.clientSubscription.groupBy({
         by: ['planName'],
         where: { tenantId },
         _sum: { amount: true },
         _count: { id: true },
       }),
-      // All subscriptions overview
       this.prisma.clientSubscription.findMany({
         where: { tenantId },
         include: { client: { select: { id: true, name: true, phone: true } } },
@@ -269,5 +263,190 @@ export class DashboardService {
       revenueByPlan,
       subscriptions: subsList,
     };
+  }
+
+  async getFunnelReport(tenantId: string) {
+    const stages = [
+      { key: LeadStatus.NEW, label: 'Новый' },
+      { key: LeadStatus.IN_PROGRESS, label: 'В работе' },
+      { key: LeadStatus.NEGOTIATION, label: 'Переговоры' },
+      { key: LeadStatus.WON, label: 'Успешно (WON)' },
+      { key: LeadStatus.LOST, label: 'Отказ (LOST)' },
+    ];
+
+    const counts = await this.prisma.lead.groupBy({
+      by: ['status'],
+      where: { tenantId },
+      _count: { id: true },
+      _sum: { potentialAmount: true },
+    });
+
+    const countMap = new Map(counts.map((c) => [c.status, { count: c._count.id, amount: Number(c._sum.potentialAmount || 0) }]));
+    const totalLeads = counts.reduce((acc, c) => acc + c._count.id, 0);
+
+    const funnel = stages.map((st) => {
+      const data = countMap.get(st.key) || { count: 0, amount: 0 };
+      return {
+        stage: st.key,
+        label: st.label,
+        count: data.count,
+        amount: data.amount,
+        percentage: totalLeads > 0 ? Number(((data.count / totalLeads) * 100).toFixed(1)) : 0,
+      };
+    });
+
+    return {
+      totalLeads,
+      funnel,
+    };
+  }
+
+  async getManagersReport(tenantId: string) {
+    const users = await this.prisma.user.findMany({
+      where: { tenantId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        assignedLeads: { select: { id: true, status: true, potentialAmount: true } },
+        assignedSales: { select: { id: true, amount: true, status: true } },
+        assignedOrders: { select: { id: true, amount: true, status: true } },
+        tasks: { select: { id: true, status: true } },
+      },
+    });
+
+    return users.map((u) => {
+      const totalLeads = u.assignedLeads.length;
+      const wonLeads = u.assignedLeads.filter((l) => l.status === LeadStatus.WON).length;
+      const leadConversion = totalLeads > 0 ? Number(((wonLeads / totalLeads) * 100).toFixed(1)) : 0;
+
+      const paidSales = u.assignedSales.filter((s) => s.status === SaleStatus.PAID);
+      const totalRevenue = paidSales.reduce((acc, s) => acc + Number(s.amount), 0);
+      const avgDealSize = paidSales.length > 0 ? Math.round(totalRevenue / paidSales.length) : 0;
+
+      const completedTasks = u.tasks.filter((t) => t.status === 'COMPLETED').length;
+
+      return {
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        totalLeads,
+        wonLeads,
+        leadConversion,
+        salesCount: paidSales.length,
+        totalRevenue,
+        avgDealSize,
+        tasksCount: u.tasks.length,
+        completedTasks,
+      };
+    });
+  }
+
+  async getProductsReport(tenantId: string) {
+    const saleItems = await this.prisma.saleItem.findMany({
+      where: { sale: { tenantId, status: SaleStatus.PAID } },
+      include: { product: true },
+    });
+
+    const map = new Map<string, { name: string; quantity: number; revenue: number; cost: number }>();
+
+    for (const item of saleItems) {
+      const key = item.productId || item.name;
+      const existing = map.get(key) || {
+        name: item.name,
+        quantity: 0,
+        revenue: 0,
+        cost: 0,
+      };
+
+      existing.quantity += item.quantity;
+      existing.revenue += Number(item.total);
+      if (item.product?.costPrice) {
+        existing.cost += Number(item.product.costPrice) * item.quantity;
+      }
+      map.set(key, existing);
+    }
+
+    const result = Array.from(map.values()).map((p) => ({
+      ...p,
+      margin: p.revenue > 0 ? Math.round(p.revenue - p.cost) : 0,
+      marginPercent: p.revenue > 0 ? Number((((p.revenue - p.cost) / p.revenue) * 100).toFixed(1)) : 0,
+    }));
+
+    return result.sort((a, b) => b.revenue - a.revenue);
+  }
+
+  async globalSearch(tenantId: string, query: string) {
+    if (!query || query.trim().length < 2) {
+      return { clients: [], leads: [], products: [], sales: [], orders: [] };
+    }
+
+    const q = query.trim();
+
+    const [clients, leads, products, sales, orders] = await Promise.all([
+      this.prisma.client.findMany({
+        where: {
+          tenantId,
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { phone: { contains: q, mode: 'insensitive' } },
+            { email: { contains: q, mode: 'insensitive' } },
+            { telegram: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        take: 5,
+        select: { id: true, name: true, phone: true, email: true, debt: true },
+      }),
+      this.prisma.lead.findMany({
+        where: {
+          tenantId,
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { phone: { contains: q, mode: 'insensitive' } },
+            { company: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        take: 5,
+        select: { id: true, name: true, phone: true, company: true, status: true, potentialAmount: true },
+      }),
+      this.prisma.product.findMany({
+        where: {
+          tenantId,
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { sku: { contains: q, mode: 'insensitive' } },
+            { category: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        take: 5,
+        select: { id: true, name: true, price: true, sku: true, stock: true },
+      }),
+      this.prisma.sale.findMany({
+        where: {
+          tenantId,
+          OR: [
+            { client: { name: { contains: q, mode: 'insensitive' } } },
+            { comment: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        take: 5,
+        select: { id: true, amount: true, status: true, client: { select: { name: true } }, createdAt: true },
+      }),
+      this.prisma.order.findMany({
+        where: {
+          tenantId,
+          OR: [
+            { orderNumber: { contains: q, mode: 'insensitive' } },
+            { client: { name: { contains: q, mode: 'insensitive' } } },
+          ],
+        },
+        take: 5,
+        select: { id: true, orderNumber: true, amount: true, status: true, client: { select: { name: true } }, createdAt: true },
+      }),
+    ]);
+
+    return { clients, leads, products, sales, orders };
   }
 }

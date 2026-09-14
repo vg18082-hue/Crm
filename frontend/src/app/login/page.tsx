@@ -7,6 +7,7 @@ import { LockOutlined, MailOutlined, RocketOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Form, Input, Typography } from 'antd';
 import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
+import { showApiError } from '@/lib/error-handler';
 
 const { Title, Text } = Typography;
 
@@ -25,6 +26,7 @@ export default function LoginPage() {
       router.push('/');
     } catch (err: any) {
       setErrorMsg(err.response?.data?.message || 'Ошибка входа. Проверьте данные.');
+      showApiError(err, 'Ошибка входа в систему');
     } finally {
       setLoading(false);
     }

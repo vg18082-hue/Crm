@@ -2,15 +2,24 @@
 
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import {
+  CreditCardOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  EyeOutlined,
+  PlusOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
 import {
   Button,
   Card,
   Divider,
+  Drawer,
   Form,
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -20,6 +29,8 @@ import {
 } from 'antd';
 import dayjs from 'dayjs';
 import { apiClient } from '@/lib/api-client';
+import { exportToCSV } from '@/lib/export-csv';
+import { showApiError } from '@/lib/error-handler';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -27,13 +38,21 @@ const { Option } = Select;
 export default function SalesPage() {
   const queryClient = useQueryClient();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedSale, setSelectedSale] = useState<any | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentSaleId, setPaymentSaleId] = useState<string | null>(null);
+
   const [form] = Form.useForm();
+  const [paymentForm] = Form.useForm();
   const items: any[] = Form.useWatch('items', form) || [];
 
   const { data: sales, isLoading } = useQuery({
-    queryKey: ['sales-list'],
+    queryKey: ['sales-list', statusFilter],
     queryFn: async () => {
-      const res = await apiClient.get('/sales');
+      const params: any = {};
+      if (statusFilter !== 'ALL') params.status = statusFilter;
+      const res = await apiClient.get('/sales', { params });
       return res.data;
     },
   });
@@ -54,6 +73,14 @@ export default function SalesPage() {
     },
   });
 
+  const { data: users } = useQuery({
+    queryKey: ['users-list'],
+    queryFn: async () => {
+      const res = await apiClient.get('/users');
+      return res.data;
+    },
+  });
+
   // Calc totals from items
   const subtotal = items.reduce((sum: number, item: any) => {
     const qty = Number(item?.quantity) || 0;
@@ -66,7 +93,6 @@ export default function SalesPage() {
 
   const createMutation = useMutation({
     mutationFn: async (values: any) => {
-      // Remove amount — it's calculated on the backend from items
       const { amount: _amount, ...rest } = values;
       return apiClient.post('/sales', rest);
     },
@@ -75,10 +101,43 @@ export default function SalesPage() {
       setIsCreateOpen(false);
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: ['sales-list'] });
+      queryClient.invalidateQueries({ queryKey: ['clients-list'] });
     },
     onError: (err: any) => {
-      const msg = err.response?.data?.message;
-      message.error(Array.isArray(msg) ? msg.join(', ') : msg || 'Ошибка оформления продажи');
+      showApiError(err, 'Ошибка оформления продажи');
+    },
+  });
+
+  const paymentMutation = useMutation({
+    mutationFn: async (values: any) => {
+      return apiClient.post('/payments', {
+        ...values,
+        saleId: paymentSaleId,
+      });
+    },
+    onSuccess: () => {
+      message.success('Оплата зачислена!');
+      setIsPaymentModalOpen(false);
+      paymentForm.resetFields();
+      queryClient.invalidateQueries({ queryKey: ['sales-list'] });
+      queryClient.invalidateQueries({ queryKey: ['clients-list'] });
+    },
+    onError: (err: any) => {
+      showApiError(err, 'Ошибка при зачислении оплаты');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiClient.delete(`/sales/${id}`);
+    },
+    onSuccess: () => {
+      message.success('Продажа удалена');
+      setSelectedSale(null);
+      queryClient.invalidateQueries({ queryKey: ['sales-list'] });
+    },
+    onError: (err: any) => {
+      showApiError(err, 'Ошибка удаления продажи');
     },
   });
 
@@ -95,6 +154,31 @@ export default function SalesPage() {
       discount: 0,
     };
     form.setFieldsValue({ items: current });
+  };
+
+  const handleExport = () => {
+    if (!sales || sales.length === 0) return;
+    exportToCSV(
+      'sales_export',
+      sales.map((s: any) => ({
+        createdAt: dayjs(s.createdAt).format('DD.MM.YYYY HH:mm'),
+        clientName: s.client?.name,
+        amount: s.amount,
+        status: s.status,
+        paymentMethod: s.paymentMethod,
+        managerName: s.assignedTo?.name || '—',
+        comment: s.comment || '—',
+      })),
+      [
+        { key: 'createdAt', title: 'Дата' },
+        { key: 'clientName', title: 'Клиент' },
+        { key: 'amount', title: 'Сумма (сум)' },
+        { key: 'status', title: 'Статус' },
+        { key: 'paymentMethod', title: 'Метод оплаты' },
+        { key: 'managerName', title: 'Менеджер' },
+        { key: 'comment', title: 'Комментарий' },
+      ],
+    );
   };
 
   const columns = [
@@ -114,7 +198,12 @@ export default function SalesPage() {
       title: 'Сумма сделки',
       dataIndex: 'amount',
       key: 'amount',
-      render: (amount: any) => <span style={{ fontWeight: 700, color: '#52c41a' }}>{Number(amount).toLocaleString()} сум</span>,
+      render: (amount: any) => (
+        <span style={{ fontWeight: 700, color: '#52c41a', fontSize: 15 }}>
+          {Number(amount).toLocaleString()} сум
+        </span>
+      ),
+      sorter: (a: any, b: any) => Number(a.amount || 0) - Number(b.amount || 0),
     },
     {
       title: 'Способ оплаты',
@@ -132,6 +221,46 @@ export default function SalesPage() {
         </Tag>
       ),
     },
+    {
+      title: 'Менеджер',
+      key: 'manager',
+      render: (_: any, r: any) => r.assignedTo?.name || '—',
+    },
+    {
+      title: 'Действия',
+      key: 'actions',
+      align: 'right' as const,
+      render: (_: any, record: any) => (
+        <Space>
+          {record.status !== 'PAID' && (
+            <Button
+              size="small"
+              type="primary"
+              style={{ backgroundColor: '#52c41a' }}
+              icon={<CreditCardOutlined />}
+              onClick={() => {
+                setPaymentSaleId(record.id);
+                paymentForm.setFieldsValue({ amount: Number(record.amount) });
+                setIsPaymentModalOpen(true);
+              }}
+            >
+              Оплатить
+            </Button>
+          )}
+          <Button size="small" icon={<EyeOutlined />} onClick={() => setSelectedSale(record)}>
+            Детали
+          </Button>
+          <Popconfirm
+            title="Удалить продажу?"
+            onConfirm={() => deleteMutation.mutate(record.id)}
+            okText="Да"
+            cancelText="Отмена"
+          >
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
   ];
 
   return (
@@ -143,15 +272,30 @@ export default function SalesPage() {
           </Title>
           <Text type="secondary">Оформление сделок, расчет стоимости и статус платежей</Text>
         </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          size="large"
-          style={{ borderRadius: 8 }}
-          onClick={() => setIsCreateOpen(true)}
-        >
-          Новая продажа
-        </Button>
+        <Space>
+          <Select
+            value={statusFilter}
+            onChange={setStatusFilter}
+            style={{ width: 180 }}
+            size="large"
+          >
+            <Select.Option value="ALL">Все продажи</Select.Option>
+            <Select.Option value="PAID">🟢 Только Оплаченные</Select.Option>
+            <Select.Option value="PENDING">🟡 Ожидают оплаты</Select.Option>
+          </Select>
+          <Button icon={<DownloadOutlined />} size="large" onClick={handleExport}>
+            Экспорт
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            size="large"
+            style={{ borderRadius: 8 }}
+            onClick={() => setIsCreateOpen(true)}
+          >
+            Новая продажа
+          </Button>
+        </Space>
       </div>
 
       <Card style={{ borderRadius: 12 }}>
@@ -164,7 +308,7 @@ export default function SalesPage() {
         open={isCreateOpen}
         onCancel={() => { setIsCreateOpen(false); form.resetFields(); }}
         footer={null}
-        width={720}
+        width={750}
       >
         <Form
           layout="vertical"
@@ -172,15 +316,30 @@ export default function SalesPage() {
           onFinish={(values) => createMutation.mutate(values)}
           initialValues={{ discount: 0, paymentMethod: 'CASH', status: 'PENDING', items: [{ quantity: 1, price: 0, discount: 0 }] }}
         >
-          <Form.Item label="Клиент" name="clientId" rules={[{ required: true, message: 'Выберите клиента' }]}>
-            <Select placeholder="Выберите клиента из базы" size="large" showSearch optionFilterProp="children">
-              {clients?.map((c: any) => (
-                <Option key={c.id} value={c.id}>
-                  {c.name} ({c.phone || 'Без телефона'})
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
+          <Row gutter={16}>
+            <Col span={14}>
+              <Form.Item label="Клиент" name="clientId" rules={[{ required: true, message: 'Выберите клиента' }]}>
+                <Select placeholder="Выберите клиента из базы" size="large" showSearch optionFilterProp="children">
+                  {clients?.map((c: any) => (
+                    <Option key={c.id} value={c.id}>
+                      {c.name} ({c.phone || 'Без телефона'})
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={10}>
+              <Form.Item label="Ответственный менеджер" name="assignedToId">
+                <Select placeholder="Менеджер" size="large" allowClear>
+                  {users?.map((u: any) => (
+                    <Option key={u.id} value={u.id}>
+                      {u.name}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
 
           <Divider orientation="left" style={{ fontSize: 13, marginBottom: 8 }}>
             🛒 Позиции (товары / услуги)
@@ -292,15 +451,15 @@ export default function SalesPage() {
             </Form.Item>
             <Form.Item label="Способ оплаты" name="paymentMethod" style={{ flex: 1, marginBottom: 8 }}>
               <Select>
-                <Option value="CASH">Наличные</Option>
-                <Option value="CARD">Банковская карта</Option>
-                <Option value="TRANSFER">Перевод на расчетный счет</Option>
+                <Option value="CASH">💵 Наличные</Option>
+                <Option value="CARD">💳 Банковская карта</Option>
+                <Option value="TRANSFER">🏦 Банковский перевод</Option>
               </Select>
             </Form.Item>
             <Form.Item label="Статус оплаты" name="status" style={{ flex: 1, marginBottom: 8 }}>
               <Select>
-                <Option value="PENDING">🟡 Ожидает оплаты</Option>
-                <Option value="PAID">🟢 Оплачено полностью</Option>
+                <Option value="PENDING">🟡 Ожидает оплаты (Долг)</Option>
+                <Option value="PAID">🟢 Оплачено сразу</Option>
               </Select>
             </Form.Item>
           </div>
@@ -335,6 +494,93 @@ export default function SalesPage() {
             <Button type="primary" htmlType="submit" loading={createMutation.isPending}>
               Оформить продажу
             </Button>
+          </div>
+        </Form>
+      </Modal>
+
+      {/* Sale Detail Drawer */}
+      <Drawer
+        title="🧾 Детали продажи"
+        width={580}
+        open={!!selectedSale}
+        onClose={() => setSelectedSale(null)}
+      >
+        {selectedSale && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <Text type="secondary">Клиент:</Text>
+                <Title level={4} style={{ margin: 0 }}>{selectedSale.client?.name}</Title>
+              </div>
+              <Tag color={selectedSale.status === 'PAID' ? 'success' : 'warning'} style={{ fontSize: 14, padding: '4px 10px' }}>
+                {selectedSale.status}
+              </Tag>
+            </div>
+
+            <p><strong>Дата создания:</strong> {dayjs(selectedSale.createdAt).format('DD.MM.YYYY HH:mm')}</p>
+            <p><strong>Сумма сделки:</strong> <Text strong style={{ color: '#52c41a', fontSize: 16 }}>{Number(selectedSale.amount).toLocaleString()} сум</Text></p>
+            <p><strong>Метод оплаты:</strong> {selectedSale.paymentMethod}</p>
+            <p><strong>Менеджер:</strong> {selectedSale.assignedTo?.name || '—'}</p>
+            {selectedSale.comment && <p><strong>Комментарий:</strong> {selectedSale.comment}</p>}
+
+            <Divider>Позиции продажи</Divider>
+            <Table
+              dataSource={selectedSale.saleItems || []}
+              rowKey="id"
+              pagination={false}
+              size="small"
+              columns={[
+                { title: 'Позиция', dataIndex: 'name' },
+                { title: 'Кол-во', dataIndex: 'quantity' },
+                { title: 'Цена', dataIndex: 'price', render: (p) => `${Number(p).toLocaleString()} сум` },
+                { title: 'Итого', dataIndex: 'total', render: (t) => `${Number(t).toLocaleString()} сум` },
+              ]}
+            />
+
+            {selectedSale.payments?.length > 0 && (
+              <>
+                <Divider>История платежей</Divider>
+                <Table
+                  dataSource={selectedSale.payments}
+                  rowKey="id"
+                  pagination={false}
+                  size="small"
+                  columns={[
+                    { title: 'Дата', dataIndex: 'paymentDate', render: (d) => dayjs(d).format('DD.MM.YYYY') },
+                    { title: 'Сумма', dataIndex: 'amount', render: (a) => `${Number(a).toLocaleString()} сум` },
+                    { title: 'Метод', dataIndex: 'paymentMethod' },
+                  ]}
+                />
+              </>
+            )}
+          </div>
+        )}
+      </Drawer>
+
+      {/* Payment Modal */}
+      <Modal
+        title="💳 Зачислить оплату по сделке"
+        open={isPaymentModalOpen}
+        onCancel={() => setIsPaymentModalOpen(false)}
+        footer={null}
+      >
+        <Form layout="vertical" form={paymentForm} onFinish={(values) => paymentMutation.mutate(values)}>
+          <Form.Item label="Сумма оплаты (сум)" name="amount" rules={[{ required: true, message: 'Укажите сумму' }]}>
+            <InputNumber style={{ width: '100%' }} size="large" />
+          </Form.Item>
+          <Form.Item label="Способ оплаты" name="paymentMethod" initialValue="CASH">
+            <Select size="large">
+              <Select.Option value="CASH">💵 Наличные</Select.Option>
+              <Select.Option value="CARD">💳 Банковская карта</Select.Option>
+              <Select.Option value="TRANSFER">🏦 Банковский перевод</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item label="Комментарий" name="comment">
+            <Input placeholder="Оплата сделки" />
+          </Form.Item>
+          <div style={{ textAlign: 'right' }}>
+            <Button onClick={() => setIsPaymentModalOpen(false)} style={{ marginRight: 8 }}>Отмена</Button>
+            <Button type="primary" htmlType="submit" loading={paymentMutation.isPending}>Зачислить</Button>
           </div>
         </Form>
       </Modal>

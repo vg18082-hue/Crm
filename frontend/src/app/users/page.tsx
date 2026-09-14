@@ -2,7 +2,14 @@
 
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { PlusOutlined, UserOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  EditOutlined,
+  LockOutlined,
+  PlusOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -10,6 +17,7 @@ import {
   Form,
   Input,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -18,6 +26,8 @@ import {
   message,
 } from 'antd';
 import { apiClient } from '@/lib/api-client';
+import { exportToCSV } from '@/lib/export-csv';
+import { showApiError } from '@/lib/error-handler';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -25,7 +35,10 @@ const { Option } = Select;
 export default function UsersPage() {
   const queryClient = useQueryClient();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+
   const [form] = Form.useForm();
+  const [editForm] = Form.useForm();
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['users-list'],
@@ -46,9 +59,61 @@ export default function UsersPage() {
       queryClient.invalidateQueries({ queryKey: ['users-list'] });
     },
     onError: (err: any) => {
-      message.error(err.response?.data?.message || 'Ошибка создания сотрудника');
+      showApiError(err, 'Ошибка создания сотрудника');
     },
   });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, values }: { id: string; values: any }) => {
+      return apiClient.patch(`/users/${id}`, values);
+    },
+    onSuccess: () => {
+      message.success('Данные сотрудника обновлены');
+      setEditingUser(null);
+      queryClient.invalidateQueries({ queryKey: ['users-list'] });
+    },
+    onError: (err: any) => {
+      showApiError(err, 'Ошибка при сохранении сотрудника');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiClient.delete(`/users/${id}`);
+    },
+    onSuccess: () => {
+      message.success('Сотрудник удален');
+      queryClient.invalidateQueries({ queryKey: ['users-list'] });
+    },
+    onError: (err: any) => {
+      showApiError(err, 'Ошибка удаления сотрудника');
+    },
+  });
+
+  const handleExport = () => {
+    if (!users || users.length === 0) return;
+    exportToCSV(
+      'users_staff_export',
+      users.map((u: any) => ({
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        clientsCount: u._count?.assignedClients || 0,
+        leadsCount: u._count?.assignedLeads || 0,
+        salesCount: u._count?.assignedSales || 0,
+        tasksCount: u._count?.tasks || 0,
+      })),
+      [
+        { key: 'name', title: 'ФИО сотрудника' },
+        { key: 'email', title: 'Email' },
+        { key: 'role', title: 'Роль' },
+        { key: 'clientsCount', title: 'Закреплено клиентов' },
+        { key: 'leadsCount', title: 'Лидов в работе' },
+        { key: 'salesCount', title: 'Оформлено продаж' },
+        { key: 'tasksCount', title: 'Задач' },
+      ],
+    );
+  };
 
   const columns = [
     {
@@ -76,11 +141,52 @@ export default function UsersPage() {
           ADMIN: { color: 'gold', label: '👑 Администратор (Полный доступ)' },
           MANAGER_HEAD: { color: 'purple', label: '💼 Руководитель отдела' },
           MANAGER: { color: 'blue', label: '👨‍💼 Менеджер по продажам' },
-          CASHIER: { color: 'green', label: '💵 Кассир (Продажи и чеки)' },
+          CASHIER: { color: 'green', label: '💵 Кассир (Касса и продажи)' },
         };
         const conf = rolesMap[role] || { color: 'default', label: role };
         return <Tag color={conf.color}>{conf.label}</Tag>;
       },
+    },
+    {
+      title: 'Нагрузка / Объекты',
+      key: 'stats',
+      render: (_: any, record: any) => (
+        <Space size={6}>
+          <Tag color="cyan">👥 {record._count?.assignedClients || 0} клиентов</Tag>
+          <Tag color="blue">🎯 {record._count?.assignedLeads || 0} лидов</Tag>
+          <Tag color="green">💰 {record._count?.assignedSales || 0} продаж</Tag>
+          <Tag color="orange">📋 {record._count?.tasks || 0} задач</Tag>
+        </Space>
+      ),
+    },
+    {
+      title: 'Действия',
+      key: 'actions',
+      align: 'right' as const,
+      render: (_: any, record: any) => (
+        <Space>
+          <Button
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => {
+              setEditingUser(record);
+              editForm.setFieldsValue({
+                name: record.name,
+                role: record.role,
+              });
+            }}
+          />
+          <Popconfirm
+            title="Удалить сотрудника?"
+            description="Сотрудник потеряет доступ к CRM."
+            onConfirm={() => deleteMutation.mutate(record.id)}
+            okText="Да, удалить"
+            cancelText="Отмена"
+          >
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
     },
   ];
 
@@ -91,17 +197,22 @@ export default function UsersPage() {
           <Title level={2} style={{ margin: 0 }}>
             👥 Управление Сотрудниками
           </Title>
-          <Text type="secondary">Кадры компании и назначение ролей доступа (RBAC)</Text>
+          <Text type="secondary">Кадры компании, распределение нагрузки и роли доступа (RBAC)</Text>
         </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          size="large"
-          style={{ borderRadius: 8 }}
-          onClick={() => setIsCreateOpen(true)}
-        >
-          Добавить сотрудника
-        </Button>
+        <Space>
+          <Button icon={<DownloadOutlined />} size="large" onClick={handleExport}>
+            Экспорт в CSV
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            size="large"
+            style={{ borderRadius: 8 }}
+            onClick={() => setIsCreateOpen(true)}
+          >
+            Добавить сотрудника
+          </Button>
+        </Space>
       </div>
 
       <Card style={{ borderRadius: 12 }}>
@@ -152,6 +263,49 @@ export default function UsersPage() {
             </Button>
             <Button type="primary" htmlType="submit" loading={createMutation.isPending}>
               Создать сотрудника
+            </Button>
+          </div>
+        </Form>
+      </Modal>
+
+      {/* Edit Staff Modal */}
+      <Modal
+        title="✏️ Редактировать сотрудника"
+        open={!!editingUser}
+        onCancel={() => setEditingUser(null)}
+        footer={null}
+      >
+        <Form
+          layout="vertical"
+          form={editForm}
+          onFinish={(values) => updateMutation.mutate({ id: editingUser.id, values })}
+        >
+          <Form.Item label="ФИО сотрудника" name="name" rules={[{ required: true, message: 'Введите имя' }]}>
+            <Input size="large" />
+          </Form.Item>
+
+          <Form.Item label="Роль сотрудника" name="role">
+            <Select size="large">
+              <Option value="ADMIN">👑 Администратор (Полный доступ)</Option>
+              <Option value="MANAGER_HEAD">💼 Руководитель отдела</Option>
+              <Option value="MANAGER">👨‍💼 Менеджер (Свои клиенты и лиды)</Option>
+              <Option value="CASHIER">💵 Кассир (Касса, продажи и чеки)</Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            label="Сбросить пароль (оставьте пустым, если не меняете)"
+            name="password"
+          >
+            <Input.Password placeholder="Новый пароль" size="large" />
+          </Form.Item>
+
+          <div style={{ textAlign: 'right', marginTop: 20 }}>
+            <Button onClick={() => setEditingUser(null)} style={{ marginRight: 8 }}>
+              Отмена
+            </Button>
+            <Button type="primary" htmlType="submit" loading={updateMutation.isPending}>
+              Сохранить
             </Button>
           </div>
         </Form>

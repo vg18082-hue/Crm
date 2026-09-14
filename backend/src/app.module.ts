@@ -15,6 +15,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { JobsModule } from './jobs/jobs.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -32,8 +33,9 @@ import { JobsModule } from './jobs/jobs.module';
     DashboardModule,
     NotificationsModule,
     JobsModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule {}

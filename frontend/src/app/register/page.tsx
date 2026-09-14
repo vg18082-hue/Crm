@@ -7,6 +7,7 @@ import { BankOutlined, LockOutlined, MailOutlined, RocketOutlined, UserOutlined 
 import { Alert, Button, Card, Form, Input, Typography } from 'antd';
 import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
+import { showApiError } from '@/lib/error-handler';
 
 const { Title, Text } = Typography;
 
@@ -25,6 +26,7 @@ export default function RegisterPage() {
       router.push('/');
     } catch (err: any) {
       setErrorMsg(err.response?.data?.message || 'Ошибка регистрации компании.');
+      showApiError(err, 'Ошибка регистрации компании');
     } finally {
       setLoading(false);
     }

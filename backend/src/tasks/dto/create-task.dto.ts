@@ -1,14 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskPriority, TaskStatus, TaskType } from '@prisma/client';
-import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, ValidateIf } from 'class-validator';
 
 export class CreateTaskDto {
   @ApiProperty({ example: 'Перезвонить клиенту по поводу договора' })
-  @IsString()
+  @IsString({ message: 'Заголовок задачи должен быть строкой' })
   @IsNotEmpty({ message: 'Заголовок задачи обязателен' })
   title: string;
 
   @ApiPropertyOptional({ example: 'Уточнить скидку на объем' })
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
   @IsString()
   @IsOptional()
   comment?: string;
@@ -29,21 +31,26 @@ export class CreateTaskDto {
   status?: TaskStatus;
 
   @ApiPropertyOptional({ example: '2026-08-25T15:00:00.000Z', description: 'Срок выполнения (дедлайн)' })
-  @IsDateString()
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @ValidateIf((o) => !!o.dueDate)
+  @IsDateString({}, { message: 'Некорректный формат срока выполнения' })
   @IsOptional()
   dueDate?: string;
 
   @ApiPropertyOptional({ description: 'ID ответственного сотрудника' })
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
   @IsString()
   @IsOptional()
   assignedToId?: string;
 
   @ApiPropertyOptional({ description: 'ID связанного клиента' })
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
   @IsString()
   @IsOptional()
   clientId?: string;
 
   @ApiPropertyOptional({ description: 'ID связанного лида' })
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
   @IsString()
   @IsOptional()
   leadId?: string;
