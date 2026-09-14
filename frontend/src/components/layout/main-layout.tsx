@@ -818,7 +818,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
               <Divider style={{ margin: '12px 0' }} />
 
               <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                <Form.Item orientation="left" style={{ marginBottom: 0 }}>
+                <Form.Item style={{ marginBottom: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ fontWeight: 500 }}>🎯 Новые Лиды</div>
@@ -827,12 +827,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                       </Text>
                     </div>
                     <Form.Item name="notifyLeads" valuePropName="checked" noStyle>
-                      <Switch orientation="right" />
+                      <Switch />
                     </Form.Item>
                   </div>
                 </Form.Item>
 
-                <Form.Item orientation="left" style={{ marginBottom: 0 }}>
+                <Form.Item style={{ marginBottom: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ fontWeight: 500 }}>📦 Новые Заказы</div>
@@ -841,12 +841,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                       </Text>
                     </div>
                     <Form.Item name="notifyOrders" valuePropName="checked" noStyle>
-                      <Switch orientation="right" />
+                      <Switch />
                     </Form.Item>
                   </div>
                 </Form.Item>
 
-                <Form.Item orientation="left" style={{ marginBottom: 0 }}>
+                <Form.Item style={{ marginBottom: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ fontWeight: 500 }}>💳 Оплаты и Чеки</div>
@@ -855,12 +855,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                       </Text>
                     </div>
                     <Form.Item name="notifyPayments" valuePropName="checked" noStyle>
-                      <Switch orientation="right" />
+                      <Switch />
                     </Form.Item>
                   </div>
                 </Form.Item>
 
-                <Form.Item orientation="left" style={{ marginBottom: 0 }}>
+                <Form.Item style={{ marginBottom: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ fontWeight: 500 }}>🚀 Абонентские подписки</div>
@@ -869,7 +869,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                       </Text>
                     </div>
                     <Form.Item name="notifySubscriptions" valuePropName="checked" noStyle>
-                      <Switch orientation="right" />
+                      <Switch />
                     </Form.Item>
                   </div>
                 </Form.Item>
