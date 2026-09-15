@@ -1,9 +1,25 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+export function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('custom_api_url');
+    if (custom && custom.trim()) {
+      return custom.trim().replace(/\/+$/, '');
+    }
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (envUrl && envUrl.trim()) {
+      return envUrl.trim().replace(/\/+$/, '');
+    }
+    // If on Render or custom domain, route via Next.js proxy rewrite
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return '/api-backend';
+    }
+  }
+  return (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/+$/, '');
+}
 
 export const apiClient = axios.create({
-  baseURL: API_URL,
+  baseURL: getApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },
@@ -27,6 +43,9 @@ const processQueue = (error: any, token: string | null = null) => {
 };
 
 apiClient.interceptors.request.use((config) => {
+  // Dynamically resolve base URL on each request
+  config.baseURL = getApiBaseUrl();
+
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('accessToken');
     if (token) {
@@ -105,7 +124,7 @@ apiClient.interceptors.response.use(
       }
 
       try {
-        const res = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
+        const res = await axios.post(`${getApiBaseUrl()}/auth/refresh`, { refreshToken });
         const { accessToken, refreshToken: newRefreshToken, user } = res.data;
 
         localStorage.setItem('accessToken', accessToken);

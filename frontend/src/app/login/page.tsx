@@ -4,8 +4,8 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LockOutlined, MailOutlined, RocketOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Form, Input, Typography } from 'antd';
-import { apiClient } from '@/lib/api-client';
+import { Alert, Button, Card, Form, Input, Modal, Space, Typography, message } from 'antd';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { showApiError } from '@/lib/error-handler';
 
@@ -14,6 +14,8 @@ const { Title, Text } = Typography;
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+  const [apiForm] = Form.useForm();
   const router = useRouter();
   const { login } = useAuth();
 
@@ -103,8 +105,75 @@ export default function LoginPage() {
               Зарегистрировать бизнес
             </Link>
           </div>
+
+          <div style={{ textAlign: 'center', marginTop: 18 }}>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => {
+                apiForm.setFieldsValue({ apiUrl: getApiBaseUrl() });
+                setIsApiModalOpen(true);
+              }}
+              style={{ color: '#8c8c8c', fontSize: 12 }}
+            >
+              ⚙️ Настроить адрес сервера API
+            </Button>
+          </div>
         </Form>
       </Card>
+
+      {/* API Server URL Modal */}
+      <Modal
+        title="⚙️ Настройка адреса сервера API"
+        open={isApiModalOpen}
+        onCancel={() => setIsApiModalOpen(false)}
+        footer={null}
+        width={480}
+      >
+        <Form
+          form={apiForm}
+          layout="vertical"
+          onFinish={(values) => {
+            const url = (values.apiUrl || '').trim().replace(/\/+$/, '');
+            if (url) {
+              localStorage.setItem('custom_api_url', url);
+              message.success(`Адрес сервера сохранен: ${url}`);
+              setIsApiModalOpen(false);
+              setTimeout(() => window.location.reload(), 300);
+            }
+          }}
+        >
+          <Alert
+            message="URL сервера бэкенда"
+            description="Если вы используете Render, вставьте публичный URL бэкенда (например: https://crm-backend-xxxx.onrender.com)."
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+          <Form.Item
+            label="URL бэкенда"
+            name="apiUrl"
+            rules={[{ required: true, message: 'Укажите URL сервера бэкенда' }]}
+          >
+            <Input placeholder="https://crm-backend-xxxx.onrender.com" size="large" />
+          </Form.Item>
+          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Button
+              onClick={() => {
+                localStorage.removeItem('custom_api_url');
+                message.info('Сброшено');
+                setIsApiModalOpen(false);
+                setTimeout(() => window.location.reload(), 300);
+              }}
+            >
+              Сбросить
+            </Button>
+            <Button type="primary" htmlType="submit">
+              Сохранить и применить
+            </Button>
+          </Space>
+        </Form>
+      </Modal>
     </div>
   );
 }

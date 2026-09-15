@@ -114,10 +114,14 @@ export function extractErrorMessages(error: any): string[] {
   // Network or timeout errors
   if (error.message) {
     if (error.message.includes('Network Error')) {
-      return ['Сервер временно недоступен. Проверьте соединение с интернетом или запущен ли backend'];
+      const targetUrl = error.config?.baseURL || (typeof window !== 'undefined' ? localStorage.getItem('custom_api_url') || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000' : 'http://localhost:3000');
+      return [
+        `Сервер бэкенда недоступен по адресу: ${targetUrl}`,
+        'Если вы работаете на Render, убедитесь что бэкенд запущен (Live) или укажите URL бэкенда в настройках подключения (кнопка ⚙️ в меню профиля)',
+      ];
     }
     if (error.message.includes('timeout')) {
-      return ['Превышено время ожидания ответа от сервера'];
+      return ['Превышено время ожидания ответа от сервера (возможно, бэкенд на Render просыпается после спящего режима, попробуйте еще раз через 30 секунд)'];
     }
     return [error.message];
   }
