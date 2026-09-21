@@ -114,10 +114,9 @@ export function extractErrorMessages(error: any): string[] {
   // Network or timeout errors
   if (error.message) {
     if (error.message.includes('Network Error')) {
-      const targetUrl = error.config?.baseURL || (typeof window !== 'undefined' ? localStorage.getItem('custom_api_url') || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000' : 'http://localhost:3000');
       return [
-        `Сервер бэкенда недоступен по адресу: ${targetUrl}`,
-        'Если вы работаете на Render, убедитесь что бэкенд запущен (Live) или укажите URL бэкенда в настройках подключения (кнопка ⚙️ в меню профиля)',
+        'Сервер бэкенда временно недоступен',
+        'Проверьте интернет-соединение или повторите попытку через несколько секунд (на бесплатном тарифе Render бэкенд может просыпаться до 30-50 секунд)',
       ];
     }
     if (error.message.includes('timeout')) {

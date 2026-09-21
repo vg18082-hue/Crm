@@ -31,6 +31,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     try {
+      localStorage.removeItem('custom_api_url');
+
       const storedToken = localStorage.getItem('accessToken');
       const storedUser = localStorage.getItem('user');
       if (storedToken && storedUser) {

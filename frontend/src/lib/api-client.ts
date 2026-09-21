@@ -1,26 +1,13 @@
 import axios from 'axios';
 
-export const DEFAULT_BACKEND_URL = 'https://crm-gwrc.onrender.com';
-
-export function getApiBaseUrl(): string {
-  if (typeof window !== 'undefined') {
-    const custom = localStorage.getItem('custom_api_url');
-    // Ignore invalid dashboard.render.com URLs if previously saved by mistake
-    if (custom && custom.trim() && !custom.includes('dashboard.render.com')) {
-      return custom.trim().replace(/\/+$/, '');
-    }
-    const envUrl = process.env.NEXT_PUBLIC_API_URL;
-    if (envUrl && envUrl.trim() && !envUrl.includes('localhost:3000')) {
-      return envUrl.trim().replace(/\/+$/, '');
-    }
-    // Default to the live Render backend URL for all users
-    return DEFAULT_BACKEND_URL;
-  }
-  return (process.env.NEXT_PUBLIC_API_URL || DEFAULT_BACKEND_URL).replace(/\/+$/, '');
-}
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:3000'
+    : 'https://crm-gwrc.onrender.com');
 
 export const apiClient = axios.create({
-  baseURL: getApiBaseUrl(),
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -44,10 +31,8 @@ const processQueue = (error: any, token: string | null = null) => {
 };
 
 apiClient.interceptors.request.use((config) => {
-  // Dynamically resolve base URL on each request
-  config.baseURL = getApiBaseUrl();
-
   if (typeof window !== 'undefined') {
+    localStorage.removeItem('custom_api_url');
     const token = localStorage.getItem('accessToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -125,7 +110,7 @@ apiClient.interceptors.response.use(
       }
 
       try {
-        const res = await axios.post(`${getApiBaseUrl()}/auth/refresh`, { refreshToken });
+        const res = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
         const { accessToken, refreshToken: newRefreshToken, user } = res.data;
 
         localStorage.setItem('accessToken', accessToken);

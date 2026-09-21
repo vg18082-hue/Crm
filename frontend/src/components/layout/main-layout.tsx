@@ -57,7 +57,7 @@ import {
 } from 'antd';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
-import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 import { showApiError } from '@/lib/error-handler';
 
 const { Header, Sider, Content } = Layout;
@@ -69,7 +69,6 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [isApiModalOpen, setIsApiModalOpen] = useState(false);
 
   const pathname = usePathname();
   const router = useRouter();
@@ -79,7 +78,6 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const [tgForm] = Form.useForm();
   const [profileForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
-  const [apiForm] = Form.useForm();
 
   const isDark = mode === 'dark';
 
@@ -326,15 +324,6 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
           tgForm.setFieldsValue(tgConfig);
         }
         setIsTgModalOpen(true);
-      },
-    },
-    {
-      key: 'api-server-settings',
-      icon: <SyncOutlined style={{ color: '#fa8c16' }} />,
-      label: 'Адрес сервера API',
-      onClick: () => {
-        apiForm.setFieldsValue({ apiUrl: getApiBaseUrl() });
-        setIsApiModalOpen(true);
       },
     },
     {
@@ -969,64 +958,6 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             Запустить проверку сейчас
           </Button>
         </div>
-      </Modal>
-
-      {/* API Server URL Modal */}
-      <Modal
-        title={
-          <Space>
-            <SyncOutlined style={{ color: '#fa8c16' }} />
-            <span>Настройка адреса сервера API (Backend URL)</span>
-          </Space>
-        }
-        open={isApiModalOpen}
-        onCancel={() => setIsApiModalOpen(false)}
-        footer={null}
-        width={500}
-      >
-        <Form
-          form={apiForm}
-          layout="vertical"
-          onFinish={(values) => {
-            const url = (values.apiUrl || '').trim().replace(/\/+$/, '');
-            if (url) {
-              localStorage.setItem('custom_api_url', url);
-              message.success(`Адрес сервера сохранен: ${url}`);
-              setIsApiModalOpen(false);
-              setTimeout(() => window.location.reload(), 500);
-            }
-          }}
-        >
-          <Alert
-            message="Текущий адрес сервера бэкенда"
-            description="Если бэкенд развернут на Render, укажите его публичный URL (например: https://crm-backend-xxxx.onrender.com)."
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-          <Form.Item
-            label="URL бэкенда"
-            name="apiUrl"
-            rules={[{ required: true, message: 'Укажите URL сервера бэкенда' }]}
-          >
-            <Input placeholder="https://crm-backend-xxxx.onrender.com" size="large" />
-          </Form.Item>
-          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Button
-              onClick={() => {
-                localStorage.removeItem('custom_api_url');
-                message.info('Сброшено на стандартный URL');
-                setIsApiModalOpen(false);
-                setTimeout(() => window.location.reload(), 500);
-              }}
-            >
-              Сбросить
-            </Button>
-            <Button type="primary" htmlType="submit">
-              Сохранить и применить
-            </Button>
-          </Space>
-        </Form>
       </Modal>
     </ConfigProvider>
   );
