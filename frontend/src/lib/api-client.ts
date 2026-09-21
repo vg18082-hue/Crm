@@ -1,21 +1,22 @@
 import axios from 'axios';
 
+export const DEFAULT_BACKEND_URL = 'https://crm-gwrc.onrender.com';
+
 export function getApiBaseUrl(): string {
   if (typeof window !== 'undefined') {
     const custom = localStorage.getItem('custom_api_url');
-    if (custom && custom.trim()) {
+    // Ignore invalid dashboard.render.com URLs if previously saved by mistake
+    if (custom && custom.trim() && !custom.includes('dashboard.render.com')) {
       return custom.trim().replace(/\/+$/, '');
     }
     const envUrl = process.env.NEXT_PUBLIC_API_URL;
-    if (envUrl && envUrl.trim()) {
+    if (envUrl && envUrl.trim() && !envUrl.includes('localhost:3000')) {
       return envUrl.trim().replace(/\/+$/, '');
     }
-    // If on Render or custom domain, route via Next.js proxy rewrite
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      return '/api-backend';
-    }
+    // Default to the live Render backend URL for all users
+    return DEFAULT_BACKEND_URL;
   }
-  return (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  return (process.env.NEXT_PUBLIC_API_URL || DEFAULT_BACKEND_URL).replace(/\/+$/, '');
 }
 
 export const apiClient = axios.create({
